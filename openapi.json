@@ -1,0 +1,742 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Mojang API",
+    "description": "API для работы с профилями Minecraft, скинами, UUID и другими сервисами Mojang.\n\n**Важные замечания:**\n- Все публичные API имеют ограничение по количеству запросов: 600 запросов на 10 минут\n- Результаты должны кэшироваться\n- Demo-аккаунты могут быть включены или не включены в ответы\n",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Mojang",
+      "url": "https://www.mojang.com"
+    },
+    "license": {
+      "name": "Creative Commons Attribution Share Alike",
+      "url": "http://creativecommons.org/licenses/by-sa/3.0/"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.mojang.com",
+      "description": "Основной API сервер"
+    },
+    {
+      "url": "https://sessionserver.mojang.com",
+      "description": "Session сервер"
+    },
+    {
+      "url": "https://status.mojang.com",
+      "description": "Сервер статуса"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Status",
+      "description": "Проверка статуса сервисов Mojang"
+    },
+    {
+      "name": "Profile",
+      "description": "Операции с профилями игроков"
+    },
+    {
+      "name": "UUID",
+      "description": "Конвертация между именами пользователей и UUID"
+    },
+    {
+      "name": "Skin",
+      "description": "Управление скинами игроков"
+    },
+    {
+      "name": "Statistics",
+      "description": "Статистика продаж"
+    },
+    {
+      "name": "Blocked Servers",
+      "description": "Список заблокированных серверов"
+    }
+  ],
+  "paths": {
+    "/check": {
+      "servers": [
+        {
+          "url": "https://status.mojang.com"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Status"
+        ],
+        "summary": "Проверка статуса API",
+        "description": "Возвращает статус различных сервисов Mojang. Возможные значения - green (нет проблем), yellow (некоторые проблемы), red (сервис недоступен)",
+        "operationId": "getApiStatus",
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string",
+                      "enum": [
+                        "green",
+                        "yellow",
+                        "red"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/profiles/minecraft/{username}": {
+      "get": {
+        "tags": [
+          "UUID"
+        ],
+        "summary": "Получить UUID по имени пользователя",
+        "description": "Возвращает UUID пользователя по имени в указанный момент времени.\n\n- Параметр `?at=0` можно использовать для получения UUID оригинального владельца имени (работает только если имя менялось хотя бы раз, или аккаунт legacy)\n- Timestamp - это UNIX timestamp (без миллисекунд)\n- Если параметр `at` не указан, используется текущее время\n",
+        "operationId": "getUsernameToUuid",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "description": "Имя пользователя Minecraft",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "required": false,
+            "description": "UNIX timestamp (без миллисекунд)",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UuidProfile"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Игрок с таким именем не найден"
+          },
+          "400": {
+            "description": "Неверный timestamp",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/profiles/{uuid}/names": {
+      "get": {
+        "tags": [
+          "Profile"
+        ],
+        "summary": "История имён пользователя",
+        "description": "Возвращает все имена пользователя, которые использовались в прошлом и текущее. UUID должен быть указан без дефисов.",
+        "operationId": "getNameHistory",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "description": "UUID игрока без дефисов",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NameHistoryEntry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/profiles/minecraft": {
+      "post": {
+        "tags": [
+          "UUID"
+        ],
+        "summary": "Получить UUID для нескольких имён",
+        "description": "Возвращает UUID и дополнительную информацию для списка игроков.\n\n- Имена в ответе приводятся к правильному регистру\n- `legacy` появляется только когда true (профиль не мигрирован на mojang.com)\n- `demo` появляется только когда true (неоплаченный аккаунт)\n- Content-Type должен быть application/json\n- Максимум 100 имён за запрос\n",
+        "operationId": "getUsernamesToUuids",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UuidProfile"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Неверный запрос (null или пустое имя, или более 100 имён)"
+          }
+        }
+      }
+    },
+    "/session/minecraft/profile/{uuid}": {
+      "servers": [
+        {
+          "url": "https://sessionserver.mojang.com"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Profile"
+        ],
+        "summary": "Получить профиль с скином и плащом",
+        "description": "Возвращает имя игрока и дополнительную информацию (скины, плащи).\n\n**Строгие ограничения по количеству запросов:**\n- Один и тот же профиль можно запрашивать раз в минуту\n- Количество уникальных запросов не ограничено\n",
+        "operationId": "getProfile",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "description": "UUID игрока без дефисов",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "unsigned",
+            "in": "query",
+            "required": false,
+            "description": "Если false, включает подпись в ответ",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileWithTextures"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/profile/{uuid}/skin": {
+      "post": {
+        "tags": [
+          "Skin"
+        ],
+        "summary": "Изменить скин (по URL)",
+        "description": "Устанавливает скин для выбранного профиля. Сервера Mojang загрузят скин по указанному URL.\nРаботает также для legacy аккаунтов.\n",
+        "operationId": "changeSkin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "description": "UUID игрока без дефисов",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "description": "Пустая строка для стандартной модели или \"slim\" для тонкой модели",
+                    "enum": [
+                      "",
+                      "slim"
+                    ]
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "URL скина"
+                  }
+                },
+                "required": [
+                  "model",
+                  "url"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Скин успешно изменён"
+          },
+          "400": {
+            "description": "Ошибка при изменении скина",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неавторизован"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Skin"
+        ],
+        "summary": "Загрузить скин (файл)",
+        "description": "Загружает скин на сервера Mojang и устанавливает его для пользователя.\nРаботает также для legacy аккаунтов.\n",
+        "operationId": "uploadSkin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "description": "UUID игрока без дефисов",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "description": "Пустая строка для стандартной модели или \"slim\" для тонкой модели",
+                    "enum": [
+                      "",
+                      "slim"
+                    ]
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Файл изображения скина"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Скин успешно загружен"
+          },
+          "400": {
+            "description": "Ошибка при загрузке скина",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неавторизован"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Skin"
+        ],
+        "summary": "Сбросить скин",
+        "description": "Сбрасывает скин пользователя на стандартный",
+        "operationId": "resetSkin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "description": "UUID игрока без дефисов",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Скин успешно сброшен"
+          },
+          "400": {
+            "description": "Ошибка при сбросе скина",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неавторизован"
+          }
+        }
+      }
+    },
+    "/blockedservers": {
+      "servers": [
+        {
+          "url": "https://sessionserver.mojang.com"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Blocked Servers"
+        ],
+        "summary": "Список заблокированных серверов",
+        "description": "Возвращает список SHA1 хэшей, используемых для проверки адресов серверов при подключении клиента.\n\nКлиенты проверяют имя в нижнем регистре, используя кодировку ISO-8859-1.\nТакже проверяются поддомены с заменой каждого уровня на `*`.\n",
+        "operationId": "getBlockedServers",
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "Список SHA1 хэшей, разделённых переводом строки"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/statistics": {
+      "post": {
+        "tags": [
+          "Statistics"
+        ],
+        "summary": "Статистика продаж",
+        "description": "Получить статистику продаж Minecraft",
+        "operationId": "getStatistics",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "metricKeys": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "item_sold_minecraft",
+                        "prepaid_card_redeemed_minecraft",
+                        "item_sold_cobalt",
+                        "item_sold_scrolls"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "metricKeys"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Statistics"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Access token для авторизации"
+      }
+    },
+    "schemas": {
+      "UuidProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID без дефисов",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "name": {
+            "type": "string",
+            "description": "Текущее имя пользователя (может отличаться от запрошенного)"
+          },
+          "legacy": {
+            "type": "boolean",
+            "description": "Присутствует только когда true (аккаунт не мигрирован на mojang)"
+          },
+          "demo": {
+            "type": "boolean",
+            "description": "Присутствует только когда true (неоплаченный аккаунт)"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "NameHistoryEntry": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Имя пользователя"
+          },
+          "changedToAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Java timestamp в миллисекундах. Отсутствует для первого имени."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "ProfileWithTextures": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID профиля"
+          },
+          "name": {
+            "type": "string",
+            "description": "Имя игрока"
+          },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "textures"
+                  ]
+                },
+                "value": {
+                  "type": "string",
+                  "format": "byte",
+                  "description": "Base64 закодированная строка с информацией о текстурах"
+                },
+                "signature": {
+                  "type": "string",
+                  "format": "byte",
+                  "description": "Base64 подпись (только если unsigned=false)"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "properties"
+        ]
+      },
+      "TexturesDecoded": {
+        "type": "object",
+        "description": "Декодированное значение поля value из properties",
+        "properties": {
+          "timestamp": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Java timestamp в миллисекундах"
+          },
+          "profileId": {
+            "type": "string",
+            "description": "UUID профиля"
+          },
+          "profileName": {
+            "type": "string",
+            "description": "Имя игрока"
+          },
+          "signatureRequired": {
+            "type": "boolean",
+            "description": "Присутствует только если unsigned=false"
+          },
+          "textures": {
+            "type": "object",
+            "properties": {
+              "SKIN": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "URL скина игрока"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "model": {
+                        "type": "string",
+                        "enum": [
+                          "slim"
+                        ],
+                        "description": "Присутствует только для тонких рук (модель \"Alex\")"
+                      }
+                    }
+                  }
+                }
+              },
+              "CAPE": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "URL плаща игрока"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Statistics": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "description": "Общее количество проданных копий"
+          },
+          "last24h": {
+            "type": "integer",
+            "description": "Количество проданных копий за последние 24 часа"
+          },
+          "saleVelocityPerSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Средние продажи в секунду"
+          }
+        },
+        "required": [
+          "total",
+          "last24h",
+          "saleVelocityPerSeconds"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Тип ошибки"
+          },
+          "errorMessage": {
+            "type": "string",
+            "description": "Сообщение об ошибке"
+          }
+        },
+        "required": [
+          "error",
+          "errorMessage"
+        ]
+      }
+    }
+  }
+}
